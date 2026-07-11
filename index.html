@@ -448,6 +448,15 @@
   }
   .strip__inner span{margin:0 1.6em}
 
+  .landing{
+    position:relative;
+    height:100vh;
+    height:100svh;
+    display:grid;
+    grid-template-rows:auto minmax(0,1fr) auto;
+    overflow:hidden;
+  }
+
   .site-nav{
     position:absolute;z-index:8;top:52px;left:0;width:100%;
     display:flex;align-items:center;justify-content:space-between;gap:20px;
@@ -471,7 +480,8 @@
   .site-nav a:hover{background:var(--paper);color:var(--oil);transform:translateY(-2px)}
 
   .hero{
-    min-height:calc(100svh - 38px);
+    min-height:0;
+    height:100%;
     padding:clamp(118px,15vh,170px) var(--pad) clamp(70px,9vh,110px);
     border-bottom:1px solid var(--line);
     isolation:isolate;
@@ -657,7 +667,7 @@
     .site-nav{top:44px;padding-top:14px}
     .site-nav__brand span{display:none}
     .site-nav a{padding:8px;font-size:8px}
-    .hero{min-height:860px;padding-top:118px}
+    .hero{padding:96px var(--pad) 64px}
     .hero__eyebrow{max-width:86%;line-height:1.5;letter-spacing:.18em}
     .hero__eyebrow::before{display:none}
     .title{line-height:.75}
@@ -687,6 +697,7 @@
 <div class="halftone" aria-hidden="true"></div>
 <div class="burn-noise" aria-hidden="true"></div>
 
+<div class="landing">
 <!-- top strip -->
 <div class="strip" aria-hidden="true">
   <div class="strip__inner" id="strip1"></div>
@@ -770,6 +781,7 @@
 
 <div class="strip strip--fry strip--rev" aria-hidden="true">
   <div class="strip__inner" id="strip2"></div>
+</div>
 </div>
 
 <!-- ============ MANIFESTO ============ -->
