@@ -48,7 +48,11 @@
     user-select:none;
   }
   .strip--fry{background:var(--fry);color:var(--paper)}
-  .strip__inner{display:inline-block;animation:marquee 22s linear infinite}
+  /* marquee only runs once JS has injected the text (.is-live) — iOS Safari can
+     composite the animation against the empty inner and never re-rasterize it
+     after the content lands, leaving the strip blank */
+  .strip__inner{display:inline-block}
+  .strip__inner.is-live{animation:marquee 22s linear infinite}
   .strip--rev .strip__inner{animation-direction:reverse}
   .strip__inner span{margin:0 1.2em}
   @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -96,7 +100,9 @@
   .title__line--fried .ch{color:var(--fry);text-shadow:4px 0 var(--batter),-4px 0 var(--aberr)}
 
   /* ---- deep-fried glitch ---- */
-  .title{will-change:filter,transform}
+  /* will-change is set from JS only while a glitch is firing — pinning the
+     viewport-sized title layer permanently costs GPU memory and raster time */
+  .offstage, .offstage *{animation-play-state:paused!important}
   .title__line::before,
   .title__line::after{
     content:attr(data-text);
@@ -383,7 +389,7 @@
 
   /* ---------- reduced motion ---------- */
   @media (prefers-reduced-motion: reduce){
-    .strip__inner{animation:none}
+    .strip__inner{animation:none!important}
     .burst,.badge svg{animation:none}
     .hero.cooked .fx--grain{animation:none}
     body.cooked{animation:none}
@@ -434,7 +440,9 @@
     mask-image:linear-gradient(to bottom, #000, transparent 82%);
   }
   .burn-noise{
-    position:fixed;inset:-40%;z-index:0;pointer-events:none;opacity:.055;
+    /* only needs to overhang far enough to cover the 3%/2% wander —
+       -40% rasterized a layer 3x the viewport area on the GPU for nothing */
+    position:fixed;inset:-8%;z-index:0;pointer-events:none;opacity:.055;
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
     animation:noiseWander .55s steps(2) infinite;
   }
@@ -941,6 +949,11 @@
   "use strict";
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  /* power saver: ambient loops only run while someone can see them */
+  var heroLive = true;
+  var floaterAnims = [];
+  function motionLive(){ return heroLive && !document.hidden; }
+
   /* ---------- build rotating fryer-dial rays ---------- */
   (function(){
     var rays = 16, outer = 100, inner = 42, cx = 100, cy = 100, d = "";
@@ -971,6 +984,8 @@
     if (!el) return;
     var chunk = phrases.map(function(p){ return "<span>" + p + " ★</span>"; }).join("");
     el.innerHTML = chunk + chunk; /* duplicate for seamless loop */
+    void el.offsetWidth; /* commit the new content before the animation starts */
+    el.classList.add("is-live");
   }
   fillStrip("strip1"); fillStrip("strip2"); fillStrip("strip3");
 
@@ -1010,14 +1025,14 @@
     }, 1700);
 
     document.querySelectorAll(".floater").forEach(function(f, i){
-      anime({
+      floaterAnims.push(anime({
         targets: f,
         translateY: [{value:-14},{value:12}],
         translateX: [{value:8},{value:-10}],
         rotate: [{value:10},{value:-8}],
         direction: "alternate", loop: true,
         duration: 3200 + i * 500, easing: "easeInOutSine"
-      });
+      }));
     });
   } else {
     /* reduced motion / no anime.js: just show everything */
@@ -1051,13 +1066,14 @@
 
     /* small tic: slices + zaps + occasional JPEG flash */
     function microGlitch(){
+      titleEl.style.willChange = "filter, transform";
       setGlitch(true); zapChars();
       if (Math.random() < 0.5){
         titleEl.style.filter = "saturate(9) contrast(2.8) brightness(1.15)";
         titleEl.style.transform = "scale(1.015) skewX(-1.5deg)";
         setTimeout(function(){ titleEl.style.filter = ""; titleEl.style.transform = ""; }, 90);
       }
-      setTimeout(function(){ setGlitch(false); }, 260 + Math.random() * 300);
+      setTimeout(function(){ setGlitch(false); titleEl.style.willChange = ""; }, 260 + Math.random() * 300);
     }
 
     /* full seizure: flicker into the COOKED broadcast, hold it, flicker back */
@@ -1071,6 +1087,7 @@
       ], i = 0;
       (function step(){
         if (document.body.classList.contains("overcooked")) return; /* konami owns the state */
+        if (!motionLive()){ heroEl.classList.remove("cooked"); setGlitch(false); return; } /* nobody's watching — put the pan down */
         var s = seq[i++];
         heroEl.classList.toggle("cooked", s.on);
         setGlitch(s.on);
@@ -1089,13 +1106,54 @@
 
     (function schedule(){
       setTimeout(function(){
-        if (!document.body.classList.contains("overcooked") && !introLock){
+        if (!document.body.classList.contains("overcooked") && !introLock && motionLive()){
           if (Math.random() < 0.62) microGlitch();
           else cookedBurst();
         }
         schedule();
       }, 1600 + Math.random() * 3400);
     })();
+  }
+
+  /* ---------- power saver wiring: pause what's hidden or scrolled away ---------- */
+  function syncMotion(){
+    /* tab hidden = freeze every CSS animation on the page */
+    document.documentElement.classList.toggle("offstage", document.hidden);
+    var run = motionLive();
+    floaterAnims.forEach(function(a){ run ? a.play() : a.pause(); });
+  }
+  document.addEventListener("visibilitychange", syncMotion);
+
+  window.addEventListener("pageshow", function(e){
+    if (!e.persisted) return;
+    /* back-forward cache restore: iOS can resume composited marquees blank — restart them */
+    document.querySelectorAll(".strip__inner.is-live").forEach(function(el){
+      el.classList.remove("is-live");
+      void el.offsetWidth;
+      el.classList.add("is-live");
+    });
+    syncMotion();
+  });
+
+  if ("IntersectionObserver" in window){
+    var heroObsEl = document.querySelector(".hero");
+    var offstager = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.target === heroObsEl){
+          heroLive = en.isIntersecting;
+          heroObsEl.classList.toggle("offstage", !heroLive);
+          syncMotion();
+        } else {
+          en.target.classList.toggle("offstage", !en.isIntersecting);
+        }
+      });
+    }, {rootMargin: "80px"});
+    offstager.observe(heroObsEl);
+    /* everything with an infinite CSS loop pauses itself offscreen:
+       marquees, starburst, badge, nav blinker, manifesto orbit, dials,
+       post visuals, footer orbit */
+    document.querySelectorAll(".strip,.burst,.badge,.site-nav,.manifesto,.dial-cluster,.post__visual,footer")
+      .forEach(function(el){ offstager.observe(el); });
   }
 
   /* ---------- blog card jitter on hover ---------- */
